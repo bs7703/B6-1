@@ -1,0 +1,9 @@
+table      | row_count
+-----------+----------
+categories | 10
+authors    | 12
+users      | 30
+books      | 30
+loans      | 185
+rows: 5
+PASS: every table has at least 10 rows.

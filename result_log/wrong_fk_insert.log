@@ -1,1 +1,4 @@
-Runtime error near line 2: FOREIGN KEY constraint failed (19)
+Engine: Python sqlite3
+File: bonus/wrong_fk_insert.sql
+Actual error: FOREIGN KEY constraint failed
+PASS: invalid category insertion rejected; book_id=32 was not inserted.

@@ -1,4 +1,9 @@
+SQLite 3.53.1; Python 3.12.14
+Engine: Python sqlite3; real execution, not copied expected output.
+Reference date: 2026-10-02; NULL is printed explicitly.
+File: bonus/core.sql; foreign_keys=1
 
+=== bonus/core.sql statement 1 ===
 /*
 핵심 지표 3개. 조회 전용이며 library_queries.sql의 12개 조회와 별도로 실행한다.
 초기 데이터에서 핵심 지표 예상값 (16~17번 실행 전)
@@ -18,7 +23,12 @@ SELECT COUNT(b.book_id) AS total_book_count,
            AS loaned_book_pct
 FROM books AS b
 LEFT JOIN loans AS l ON l.book_id = b.book_id AND l.return_date IS NULL;
+total_book_count | loaned_book_count | available_book_count | loaned_book_pct
+-----------------+-------------------+----------------------+----------------
+0                | 0                 | 0                    | NULL
+rows: 1
 
+=== bonus/core.sql statement 2 ===
 -- 2. 핵심 지표: 대출 및 연체 현황 (기준일 2026-10-02)
 -- CASE로 각 상태를 1/0으로 변환해 SUM한다. 빈 loans에서는 SUM이 NULL이므로 COALESCE로 0을 반환한다.
 SELECT COUNT(*) AS total_loan_count,
@@ -36,7 +46,12 @@ SELECT COUNT(*) AS total_loan_count,
                          AND date(loan_date, '+14 days') > '2026-10-02'
                         THEN 1 ELSE 0 END), 0) AS not_yet_due_count
 FROM loans;
+total_loan_count | returned_loan_count | active_loan_count | overdue_loan_count | due_today_count | not_yet_due_count
+-----------------+---------------------+-------------------+--------------------+-----------------+------------------
+0                | 0                   | 0                 | 0                  | 0               | 0
+rows: 1
 
+=== bonus/core.sql statement 3 ===
 -- 3. 핵심 지표: 회원 이용 현황 (이용 회원은 대출 이력이 있는 회원)
 -- 1단계: users LEFT JOIN loans로 대출 없는 회원도 남긴다.
 -- 2단계: user_id별 loan_count / active_count를 계산한다(중간 결과 30행).
@@ -62,3 +77,8 @@ FROM (
     LEFT JOIN loans AS l ON l.user_id = u.user_id
     GROUP BY u.user_id
 ) AS user_loan_summary;
+total_user_count | borrowing_user_count | never_borrowed_user_count | active_borrower_count | avg_loans_per_user
+-----------------+----------------------+---------------------------+-----------------------+-------------------
+0                | 0                    | 0                         | 0                     | NULL
+rows: 1
+PASS: no data counts are 0; undefined averages/percentages are NULL.

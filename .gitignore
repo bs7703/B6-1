@@ -1,5 +1,7 @@
-*.py
 *.db
 *.sqlite3
+*.db-*
+*.sqlite3-*
 __pycache__/
-*.sh
+*.py[cod]
+.DS_Store

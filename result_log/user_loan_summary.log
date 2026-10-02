@@ -1,0 +1,37 @@
+SELECT u.user_id, u.name, COUNT(l.loan_id) AS loan_count,
+SUM(CASE WHEN l.loan_id IS NOT NULL AND l.return_date IS NULL THEN 1 ELSE 0 END) AS active_count
+FROM users u LEFT JOIN loans l ON l.user_id=u.user_id
+GROUP BY u.user_id,u.name ORDER BY u.user_id;
+user_id | name   | loan_count | active_count
+--------+--------+------------+-------------
+1       | 김민수 | 22         | 4
+2       | 이서연 | 17         | 3
+3       | 박지훈 | 15         | 3
+4       | 최유진 | 12         | 2
+5       | 정하늘 | 10         | 2
+6       | 강도윤 | 8          | 1
+7       | 윤지호 | 7          | 1
+8       | 장수빈 | 22         | 0
+9       | 임현우 | 12         | 0
+10      | 한지민 | 10         | 0
+11      | 오세진 | 8          | 0
+12      | 서다은 | 6          | 0
+13      | 신우진 | 5          | 0
+14      | 권예린 | 5          | 0
+15      | 황준서 | 4          | 0
+16      | 안소윤 | 4          | 0
+17      | 송태훈 | 3          | 0
+18      | 류민지 | 3          | 0
+19      | 김민수 | 2          | 0
+20      | 홍지수 | 2          | 0
+21      | 문성호 | 1          | 0
+22      | 백예진 | 1          | 0
+23      | 남준혁 | 0          | 0
+24      | 전수아 | 0          | 0
+25      | 조현서 | 2          | 2
+26      | 배지안 | 1          | 1
+27      | 유건우 | 2          | 2
+28      | 손채원 | 1          | 1
+29      | 양승민 | 0          | 0
+30      | 노은채 | 0          | 0
+rows: 30

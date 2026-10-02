@@ -1,3 +1,5 @@
+All 17 queries: 12 reads + 3 core metrics + 2 mutations.
+
 SQLite 3.53.1; Python 3.12.14
 Engine: Python sqlite3; real execution, not copied expected output.
 Reference date: 2026-10-02; NULL is printed explicitly.
@@ -352,3 +354,125 @@ book_id | title
 --------+----------
 30      | 돈의 속성
 rows: 1
+SQLite 3.53.1; Python 3.12.14
+Engine: Python sqlite3; real execution, not copied expected output.
+Reference date: 2026-10-02; NULL is printed explicitly.
+File: bonus/core.sql; foreign_keys=1
+
+=== bonus/core.sql statement 1 ===
+/*
+핵심 지표 3개. 조회 전용이며 library_queries.sql의 12개 조회와 별도로 실행한다.
+초기 데이터에서 핵심 지표 예상값 (16~17번 실행 전)
+1: 전체 30권 / 대출 중 22권 / 대출 가능 8권 / 대출 중 비율 73.33%
+2: 전체 185건 / 반납 163건 / 미반납 22건 / 연체 9건 / 오늘 기한 2건 / 기한 전 11건
+3: 전체 30명 / 이용 26명 / 미이용 4명 / 현재 대출 11명 / 회원당 평균 6.17건
+데이터 수정 및 삭제 후에는 위 지표도 달라진다.
+*/
+
+-- 1. 핵심 지표: 도서 가용 현황 (현재 미반납 대출은 책당 최대 1건)
+-- LEFT JOIN으로 모든 책을 남긴다. COUNT(l.loan_id)가 미반납 책 수다.
+-- NULLIF는 책이 0권일 때 분모를 NULL로 바꾸어 비율을 '정의되지 않음'으로 표시한다.
+SELECT COUNT(b.book_id) AS total_book_count,
+       COUNT(l.loan_id) AS loaned_book_count,
+       COUNT(b.book_id) - COUNT(l.loan_id) AS available_book_count,
+       ROUND(100.0 * COUNT(l.loan_id) / NULLIF(COUNT(b.book_id), 0), 2)
+           AS loaned_book_pct
+FROM books AS b
+LEFT JOIN loans AS l ON l.book_id = b.book_id AND l.return_date IS NULL;
+total_book_count | loaned_book_count | available_book_count | loaned_book_pct
+-----------------+-------------------+----------------------+----------------
+30               | 22                | 8                    | 73.33
+rows: 1
+
+=== bonus/core.sql statement 2 ===
+-- 2. 핵심 지표: 대출 및 연체 현황 (기준일 2026-10-02)
+-- CASE로 각 상태를 1/0으로 변환해 SUM한다. 빈 loans에서는 SUM이 NULL이므로 COALESCE로 0을 반환한다.
+SELECT COUNT(*) AS total_loan_count,
+       COALESCE(SUM(CASE WHEN return_date IS NOT NULL THEN 1 ELSE 0 END), 0)
+           AS returned_loan_count,
+       COALESCE(SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END), 0)
+           AS active_loan_count,
+       COALESCE(SUM(CASE WHEN return_date IS NULL
+                         AND date(loan_date, '+14 days') < '2026-10-02'
+                        THEN 1 ELSE 0 END), 0) AS overdue_loan_count,
+       COALESCE(SUM(CASE WHEN return_date IS NULL
+                         AND date(loan_date, '+14 days') = '2026-10-02'
+                        THEN 1 ELSE 0 END), 0) AS due_today_count,
+       COALESCE(SUM(CASE WHEN return_date IS NULL
+                         AND date(loan_date, '+14 days') > '2026-10-02'
+                        THEN 1 ELSE 0 END), 0) AS not_yet_due_count
+FROM loans;
+total_loan_count | returned_loan_count | active_loan_count | overdue_loan_count | due_today_count | not_yet_due_count
+-----------------+---------------------+-------------------+--------------------+-----------------+------------------
+185              | 163                 | 22                | 9                  | 2               | 11
+rows: 1
+
+=== bonus/core.sql statement 3 ===
+-- 3. 핵심 지표: 회원 이용 현황 (이용 회원은 대출 이력이 있는 회원)
+-- 1단계: users LEFT JOIN loans로 대출 없는 회원도 남긴다.
+-- 2단계: user_id별 loan_count / active_count를 계산한다(중간 결과 30행).
+-- 예: 회원 1=(22,4), 회원 8=(22,0), 회원 23=(0,0), 회원 25=(2,2).
+-- 3단계: 중간 결과를 회원 단위로 다시 집계한다. AVG는 대출 없는 회원도 포함해 185/30=6.17이다.
+-- 중간 결과의 전체 표는 result_log/user_loan_summary.log를 참고한다.
+SELECT COUNT(*) AS total_user_count,
+       COALESCE(SUM(CASE WHEN loan_count > 0 THEN 1 ELSE 0 END), 0)
+           AS borrowing_user_count,
+       COALESCE(SUM(CASE WHEN loan_count = 0 THEN 1 ELSE 0 END), 0)
+           AS never_borrowed_user_count,
+       COALESCE(SUM(CASE WHEN active_count > 0 THEN 1 ELSE 0 END), 0)
+           AS active_borrower_count,
+       ROUND(AVG(loan_count), 2) AS avg_loans_per_user
+FROM (
+    SELECT u.user_id,
+           COUNT(l.loan_id) AS loan_count,
+           SUM(CASE
+                   WHEN l.loan_id IS NOT NULL AND l.return_date IS NULL THEN 1
+                   ELSE 0
+               END) AS active_count
+    FROM users AS u
+    LEFT JOIN loans AS l ON l.user_id = u.user_id
+    GROUP BY u.user_id
+) AS user_loan_summary;
+total_user_count | borrowing_user_count | never_borrowed_user_count | active_borrower_count | avg_loans_per_user
+-----------------+----------------------+---------------------------+-----------------------+-------------------
+30               | 26                   | 4                         | 11                    | 6.17
+rows: 1
+SQLite 3.53.1; Python 3.12.14
+Engine: Python sqlite3; real execution, not copied expected output.
+Reference date: 2026-10-02; NULL is printed explicitly.
+File: modify.sql; foreign_keys=1
+
+=== modify.sql statement 1 ===
+/*
+[데이터 수정 및 삭제: 2개]
+전체 17개 중 수정 2개를 이 파일에 분리했다. 조회 실행만으로 데이터가 바뀌지 않는다.
+초기 데이터에 한 번 실행하면 대출 184건, 미반납 21건이 된다.
+다시 실행하면 조건에 맞는 행이 없으므로 RETURNING 결과가 0행이다.
+13. 반납 처리             : UPDATE로 미반납 대출 164번의 실제 반납일을 기록한다.
+14. 과거 대출 한 건 삭제  : DELETE로 반납 완료된 대출 1번을 삭제한다.
+*/
+
+-- 13. 반납 처리: 미반납 대출 164번의 실제 반납일 기록 (데이터 변경)
+UPDATE loans
+SET return_date = '2026-10-02'
+WHERE loan_id = 164
+  AND return_date IS NULL
+  AND loan_date <= '2026-10-02'
+RETURNING loan_id, user_id, book_id, loan_date, return_date;
+loan_id | user_id | book_id | loan_date  | return_date
+--------+---------+---------+------------+------------
+164     | 1       | 1       | 2026-05-15 | 2026-10-02
+rows: 1
+
+=== modify.sql statement 2 ===
+-- 14. 과거 대출 한 건 삭제: 반납 완료된 대출 1번만 삭제 (데이터 변경)
+DELETE FROM loans
+WHERE loan_id = 1
+  AND return_date IS NOT NULL
+RETURNING loan_id, user_id, book_id, loan_date, return_date;
+loan_id | user_id | book_id | loan_date  | return_date
+--------+---------+---------+------------+------------
+1       | 2       | 1       | 2025-01-20 | 2025-01-21
+rows: 1
+
+PASS: all 17 statements executed successfully.
