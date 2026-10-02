@@ -1,0 +1,109 @@
+SQLite 3.53.1; Engine: Python sqlite3
+PRAGMA foreign_keys = 1
+Every case uses SAVEPOINT and is rolled back; seed data is preserved.
+
+PASS: missing parent: books.category_id
+INSERT INTO books VALUES(9001,'검증 도서',1,999)
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_FOREIGNKEY
+Data unchanged: yes
+
+PASS: missing parent: books.author_id
+INSERT INTO books VALUES(9001,'검증 도서',999,1)
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_FOREIGNKEY
+Data unchanged: yes
+
+PASS: missing parent: loans.user_id
+INSERT INTO loans VALUES(9001,999,30,'2026-10-02',NULL)
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_FOREIGNKEY
+Data unchanged: yes
+
+PASS: missing parent: loans.book_id
+INSERT INTO loans VALUES(9001,1,999,'2026-10-02',NULL)
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_FOREIGNKEY
+Data unchanged: yes
+
+PASS: ON DELETE RESTRICT: categories
+DELETE FROM categories WHERE category_id=1
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_TRIGGER
+Data unchanged: yes
+
+PASS: ON DELETE RESTRICT: authors
+DELETE FROM authors WHERE author_id=1
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_TRIGGER
+Data unchanged: yes
+
+PASS: ON DELETE RESTRICT: users
+DELETE FROM users WHERE user_id=1
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_TRIGGER
+Data unchanged: yes
+
+PASS: ON DELETE RESTRICT: books
+DELETE FROM books WHERE book_id=1
+Actual error: FOREIGN KEY constraint failed
+SQLite error: SQLITE_CONSTRAINT_TRIGGER
+Data unchanged: yes
+
+PASS: category PK duplicate
+INSERT INTO categories VALUES(1,'중복')
+Actual error: UNIQUE constraint failed: categories.category_id
+SQLite error: SQLITE_CONSTRAINT_PRIMARYKEY
+Data unchanged: yes
+
+PASS: category cannot be NULL
+INSERT INTO books VALUES(9001,'검증 도서',1,NULL)
+Actual error: NOT NULL constraint failed: books.category_id
+SQLite error: SQLITE_CONSTRAINT_NOTNULL
+Data unchanged: yes
+
+PASS: one active loan per book
+INSERT INTO loans VALUES(9001,2,1,'2026-10-02',NULL)
+Actual error: UNIQUE constraint failed: loans.book_id
+SQLite error: SQLITE_CONSTRAINT_UNIQUE
+Data unchanged: yes
+
+PASS: return before loan
+INSERT INTO loans VALUES(9001,1,30,'2026-10-02','2026-10-01')
+Actual error: CHECK constraint failed: return_date IS NULL OR (
+            length(return_date)=10 AND return_date GLOB
+            '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            AND return_date>=loan_date
+        )
+SQLite error: SQLITE_CONSTRAINT_CHECK
+Data unchanged: yes
+
+PASS: date format
+INSERT INTO loans VALUES(9001,1,30,'2026/10/02',NULL)
+Actual error: CHECK constraint failed: length(loan_date)=10 AND loan_date GLOB
+        '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+SQLite error: SQLITE_CONSTRAINT_CHECK
+Data unchanged: yes
+
+PASS: title length
+INSERT INTO books VALUES(9001,'123456789012345678901',1,1)
+Actual error: CHECK constraint failed: length(title) BETWEEN 1 AND 20
+SQLite error: SQLITE_CONSTRAINT_CHECK
+Data unchanged: yes
+
+PASS: ON UPDATE CASCADE authors.author_id -> books.author_id
+Parent ID changed: 1 -> 1001; child rows changed: 5
+
+PASS: ON UPDATE CASCADE categories.category_id -> books.category_id
+Parent ID changed: 1 -> 1001; child rows changed: 19
+
+PASS: ON UPDATE CASCADE users.user_id -> loans.user_id
+Parent ID changed: 1 -> 1001; child rows changed: 22
+
+PASS: ON UPDATE CASCADE books.book_id -> loans.book_id
+Parent ID changed: 1 -> 1001; child rows changed: 16
+
+PASS: returned history for the same book is allowed by the partial UNIQUE index
+
+PRAGMA foreign_key_check: 0 rows
+PRAGMA integrity_check: ok

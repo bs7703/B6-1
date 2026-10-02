@@ -1,0 +1,303 @@
+{
+  "engine": "Python sqlite3",
+  "sqlite_version": "3.53.1",
+  "table_counts": {
+    "categories": 10,
+    "authors": 12,
+    "users": 30,
+    "books": 30,
+    "loans": 185
+  },
+  "core": [
+    {
+      "sql": "/*\n핵심 지표 3개. 조회 전용이며 library_queries.sql의 12개 조회와 별도로 실행한다.\n초기 데이터에서 핵심 지표 예상값 (16~17번 실행 전)\n1: 전체 30권 / 대출 중 22권 / 대출 가능 8권 / 대출 중 비율 73.33%\n2: 전체 185건 / 반납 163건 / 미반납 22건 / 연체 9건 / 오늘 기한 2건 / 기한 전 11건\n3: 전체 30명 / 이용 26명 / 미이용 4명 / 현재 대출 11명 / 회원당 평균 6.17건\n데이터 수정 및 삭제 후에는 위 지표도 달라진다.\n*/\n\n-- 1. 핵심 지표: 도서 가용 현황 (현재 미반납 대출은 책당 최대 1건)\n-- LEFT JOIN으로 모든 책을 남긴다. COUNT(l.loan_id)가 미반납 책 수다.\n-- NULLIF는 책이 0권일 때 분모를 NULL로 바꾸어 비율을 '정의되지 않음'으로 표시한다.\nSELECT COUNT(b.book_id) AS total_book_count,\n       COUNT(l.loan_id) AS loaned_book_count,\n       COUNT(b.book_id) - COUNT(l.loan_id) AS available_book_count,\n       ROUND(100.0 * COUNT(l.loan_id) / NULLIF(COUNT(b.book_id), 0), 2)\n           AS loaned_book_pct\nFROM books AS b\nLEFT JOIN loans AS l ON l.book_id = b.book_id AND l.return_date IS NULL;",
+      "columns": [
+        "total_book_count",
+        "loaned_book_count",
+        "available_book_count",
+        "loaned_book_pct"
+      ],
+      "rows": [
+        [
+          30,
+          22,
+          8,
+          73.33
+        ]
+      ]
+    },
+    {
+      "sql": "-- 2. 핵심 지표: 대출 및 연체 현황 (기준일 2026-10-02)\n-- CASE로 각 상태를 1/0으로 변환해 SUM한다. 빈 loans에서는 SUM이 NULL이므로 COALESCE로 0을 반환한다.\nSELECT COUNT(*) AS total_loan_count,\n       COALESCE(SUM(CASE WHEN return_date IS NOT NULL THEN 1 ELSE 0 END), 0)\n           AS returned_loan_count,\n       COALESCE(SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END), 0)\n           AS active_loan_count,\n       COALESCE(SUM(CASE WHEN return_date IS NULL\n                         AND date(loan_date, '+14 days') < '2026-10-02'\n                        THEN 1 ELSE 0 END), 0) AS overdue_loan_count,\n       COALESCE(SUM(CASE WHEN return_date IS NULL\n                         AND date(loan_date, '+14 days') = '2026-10-02'\n                        THEN 1 ELSE 0 END), 0) AS due_today_count,\n       COALESCE(SUM(CASE WHEN return_date IS NULL\n                         AND date(loan_date, '+14 days') > '2026-10-02'\n                        THEN 1 ELSE 0 END), 0) AS not_yet_due_count\nFROM loans;",
+      "columns": [
+        "total_loan_count",
+        "returned_loan_count",
+        "active_loan_count",
+        "overdue_loan_count",
+        "due_today_count",
+        "not_yet_due_count"
+      ],
+      "rows": [
+        [
+          185,
+          163,
+          22,
+          9,
+          2,
+          11
+        ]
+      ]
+    },
+    {
+      "sql": "-- 3. 핵심 지표: 회원 이용 현황 (이용 회원은 대출 이력이 있는 회원)\n-- 1단계: users LEFT JOIN loans로 대출 없는 회원도 남긴다.\n-- 2단계: user_id별 loan_count / active_count를 계산한다(중간 결과 30행).\n-- 예: 회원 1=(22,4), 회원 8=(22,0), 회원 23=(0,0), 회원 25=(2,2).\n-- 3단계: 중간 결과를 회원 단위로 다시 집계한다. AVG는 대출 없는 회원도 포함해 185/30=6.17이다.\n-- 중간 결과의 전체 표는 result_log/user_loan_summary.log를 참고한다.\nSELECT COUNT(*) AS total_user_count,\n       COALESCE(SUM(CASE WHEN loan_count > 0 THEN 1 ELSE 0 END), 0)\n           AS borrowing_user_count,\n       COALESCE(SUM(CASE WHEN loan_count = 0 THEN 1 ELSE 0 END), 0)\n           AS never_borrowed_user_count,\n       COALESCE(SUM(CASE WHEN active_count > 0 THEN 1 ELSE 0 END), 0)\n           AS active_borrower_count,\n       ROUND(AVG(loan_count), 2) AS avg_loans_per_user\nFROM (\n    SELECT u.user_id,\n           COUNT(l.loan_id) AS loan_count,\n           SUM(CASE\n                   WHEN l.loan_id IS NOT NULL AND l.return_date IS NULL THEN 1\n                   ELSE 0\n               END) AS active_count\n    FROM users AS u\n    LEFT JOIN loans AS l ON l.user_id = u.user_id\n    GROUP BY u.user_id\n) AS user_loan_summary;",
+      "columns": [
+        "total_user_count",
+        "borrowing_user_count",
+        "never_borrowed_user_count",
+        "active_borrower_count",
+        "avg_loans_per_user"
+      ],
+      "rows": [
+        [
+          30,
+          26,
+          4,
+          11,
+          6.17
+        ]
+      ]
+    }
+  ],
+  "inner_join": {
+    "sql": "-- 05. 도서와 저자: INNER JOIN\nSELECT b.book_id, b.title, a.name AS author_name\nFROM books AS b\nINNER JOIN authors AS a ON a.author_id = b.author_id\nORDER BY b.book_id;",
+    "columns": [
+      "book_id",
+      "title",
+      "author_name"
+    ],
+    "rows": [
+      [
+        1,
+        "채식주의자",
+        "한강"
+      ],
+      [
+        2,
+        "소년이 온다",
+        "한강"
+      ],
+      [
+        3,
+        "흰",
+        "한강"
+      ],
+      [
+        4,
+        "작별하지 않는다",
+        "한강"
+      ],
+      [
+        5,
+        "희랍어 시간",
+        "한강"
+      ],
+      [
+        6,
+        "살인자의 기억법",
+        "김영하"
+      ],
+      [
+        7,
+        "여행의 이유",
+        "김영하"
+      ],
+      [
+        8,
+        "작별인사",
+        "김영하"
+      ],
+      [
+        9,
+        "나는 나를 파괴할 권리가 있다",
+        "김영하"
+      ],
+      [
+        10,
+        "칼의 노래",
+        "김훈"
+      ],
+      [
+        11,
+        "남한산성",
+        "김훈"
+      ],
+      [
+        12,
+        "하얼빈",
+        "김훈"
+      ],
+      [
+        13,
+        "흑산",
+        "김훈"
+      ],
+      [
+        14,
+        "쇼코의 미소",
+        "최은영"
+      ],
+      [
+        15,
+        "내게 무해한 사람",
+        "최은영"
+      ],
+      [
+        16,
+        "밝은 밤",
+        "최은영"
+      ],
+      [
+        17,
+        "보건교사 안은영",
+        "정세랑"
+      ],
+      [
+        18,
+        "피프티 피플",
+        "정세랑"
+      ],
+      [
+        19,
+        "시선으로부터,",
+        "정세랑"
+      ],
+      [
+        20,
+        "두근두근 내 인생",
+        "김애란"
+      ],
+      [
+        21,
+        "바깥은 여름",
+        "김애란"
+      ],
+      [
+        22,
+        "비행운",
+        "김애란"
+      ],
+      [
+        23,
+        "82년생 김지영",
+        "조남주"
+      ],
+      [
+        24,
+        "사하맨션",
+        "조남주"
+      ],
+      [
+        25,
+        "떨림과 울림",
+        "김상욱"
+      ],
+      [
+        26,
+        "하늘과 바람과 별과 인간",
+        "김상욱"
+      ],
+      [
+        27,
+        "정재승의 과학콘서트",
+        "정재승"
+      ],
+      [
+        28,
+        "열두 발자국",
+        "정재승"
+      ],
+      [
+        29,
+        "하늘과 바람과 별과 시",
+        "윤동주"
+      ],
+      [
+        30,
+        "돈의 속성",
+        "김승호"
+      ]
+    ]
+  },
+  "left_join": {
+    "sql": "-- 08. 등록 도서 없는 저자: LEFT JOIN의 미일치 행 조회\n-- LEFT JOIN이 만든 미일치 행에서는 오른쪽 b.book_id가 NULL이다. 저자 8번 1행이 나온다.\nSELECT a.author_id, a.name AS author_name\nFROM authors AS a\nLEFT JOIN books AS b ON b.author_id = a.author_id\nWHERE b.book_id IS NULL\nORDER BY a.author_id;",
+    "columns": [
+      "author_id",
+      "author_name"
+    ],
+    "rows": [
+      [
+        8,
+        "황석영"
+      ]
+    ]
+  },
+  "category_counts": {
+    "sql": "-- 09. 카테고리별 도서 수: 책이 없는 카테고리도 0권으로 표시\n-- COUNT(*)는 미일치 행도 센다. COUNT(b.book_id)는 NULL을 제외해 카테고리 8~10을 0권으로 센다.\nSELECT c.category_id,\n       c.name AS category_name,\n       COUNT(b.book_id) AS book_count\nFROM categories AS c\nLEFT JOIN books AS b ON b.category_id = c.category_id\nGROUP BY c.category_id, c.name\nORDER BY book_count DESC, c.category_id;",
+    "columns": [
+      "category_id",
+      "category_name",
+      "book_count"
+    ],
+    "rows": [
+      [
+        1,
+        "소설",
+        19
+      ],
+      [
+        2,
+        "소설집",
+        4
+      ],
+      [
+        5,
+        "과학",
+        3
+      ],
+      [
+        3,
+        "산문집",
+        1
+      ],
+      [
+        4,
+        "시집",
+        1
+      ],
+      [
+        6,
+        "인문교양",
+        1
+      ],
+      [
+        7,
+        "경제경영",
+        1
+      ],
+      [
+        8,
+        "역사",
+        0
+      ],
+      [
+        9,
+        "예술",
+        0
+      ],
+      [
+        10,
+        "여행",
+        0
+      ]
+    ]
+  }
+}
