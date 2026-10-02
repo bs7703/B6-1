@@ -1,0 +1,9 @@
+total_book_count  loaned_book_count  available_book_count  loaned_book_pct
+----------------  -----------------  --------------------  ---------------
+30                22                 8                     73.33          
+total_loan_count  returned_loan_count  active_loan_count  overdue_loan_count  due_today_count  not_yet_due_count
+----------------  -------------------  -----------------  ------------------  ---------------  -----------------
+185               163                  22                 9                   2                11               
+total_user_count  borrowing_user_count  never_borrowed_user_count  active_borrower_count  avg_loans_per_user
+----------------  --------------------  -------------------------  ---------------------  ------------------
+30                26                    4                          11                     6.17              
